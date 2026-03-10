@@ -1,0 +1,605 @@
+
+---
+
+### `package.json`
+
+```json
+{
+  "name": "complianceos",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "seed": "node prisma/seed.js",
+    "start:worker": "node packages/jobs/worker.js || echo 'No worker configured'"
+  },
+  "dependencies": {
+    "next": "14.0.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "prisma": "^5.0.0",
+    "@prisma/client": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "pg": "^8.8.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0",
+    "bullmq": "^2.0.0",
+    "ioredis": "^5.3.2",
+    "aws-sdk": "^2.1360.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "eslint": "8.0.0",
+    "prettier": "2.8.0"
+  }
+}
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  experimental: {
+    appDir: true
+  }
+};
+
+module.exports = nextConfig;
+module.exports = {
+  content: ['./app/**/*.{ts,tsx,js,jsx}', './components/**/*.{ts,tsx,js,jsx}'],
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        bg900: '#0b0d0f',
+        bg800: '#111316',
+        panel: '#0f1316',
+        graphite: '#2b2f33',
+        ivory: '#f7f6f4',
+        platinum: '#cfd3d6',
+        gold: '#bfa36a',
+        success: '#2aa876',
+        danger: '#e05a4f'
+      },
+      fontFamily: {
+        display: ['Playfair Display', 'serif'],
+        ui: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'monospace']
+      },
+      spacing: {
+        xl: '32px',
+        xxl: '48px'
+      },
+      borderRadius: {
+        md: '10px',
+        lg: '14px'
+      },
+      boxShadow: {
+        md: '0 6px 24px rgba(2,6,23,0.65)'
+      }
+    }
+  },
+  plugins: []
+};
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {}
+  }
+};
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: complianceos
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./data/minio:/data
+# App
+NEXT_PUBLIC_APP_NAME="ComplianceOS India"
+NEXTAUTH_URL=http://localhost:3000
+JWT_SECRET=replace_with_a_long_random_string
+
+# Database (for local docker-compose)
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/complianceos
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# Storage (MinIO local)
+S3_ENDPOINT=http://localhost:9000
+S3_BUCKET=complianceos-dev
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin
+
+# AI (optional)
+OPENAI_API_KEY=sk-...
+
+# Payments (test)
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String?
+  password   String
+  createdAt  DateTime @default(now())
+  memberships OrganizationMember[]
+}
+
+model Organization {
+  id         String   @id @default(uuid())
+  name       String
+  tenantSlug String   @unique
+  createdAt  DateTime @default(now())
+  members    OrganizationMember[]
+  entities   Entity[]
+}
+
+model OrganizationMember {
+  id        String @id @default(uuid())
+  org       Organization @relation(fields: [orgId], references: [id])
+  orgId     String
+  user      User @relation(fields: [userId], references: [id])
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+}
+
+model Entity {
+  id               String   @id @default(uuid())
+  org              Organization @relation(fields: [orgId], references: [id])
+  orgId            String
+  name             String
+  entityType       String
+  pan              String?
+  incorporationDate DateTime?
+  businessProfile  BusinessProfile?
+  createdAt        DateTime @default(now())
+}
+
+model BusinessProfile {
+  id               String @id @default(uuid())
+  entity           Entity @relation(fields: [entityId], references: [id])
+  entityId         String @unique
+  turnover         Float?
+  employeeCount    Int?
+  gstRegistered    Boolean @default(false)
+  importExport     Boolean @default(false)
+  foreignOwnership Boolean @default(false)
+  sectors          Json
+  flags            Json
+  createdAt        DateTime @default(now())
+}
+
+model Questionnaire {
+  id        String @id @default(uuid())
+  slug      String @unique
+  title     String
+  version   Int
+  createdAt DateTime @default(now())
+}
+
+model UserAnswer {
+  id             String @id @default(uuid())
+  orgId          String
+  entityId       String
+  questionnaireId String
+  questionKey    String
+  answer         Json
+  answeredBy     String
+  answeredAt     DateTime @default(now())
+}
+
+model ComplianceItem {
+  id                 String @id @default(uuid())
+  code               String @unique
+  title              String
+  shortLabel         String
+  category           String
+  jurisdictionLevel  String
+  triggerType        String
+  triggerLogic       Json
+  mandatoryStatus    String
+  riskLevel          Int
+  legalBasisSummary  String
+  primaryAuthority   String
+  primaryPortal      String
+  formsOrFilings     Json
+  recurring          Boolean @default(false)
+  dueDateLogic       Json
+  evidenceRequired   Json
+  consequenceSummary String
+  correctiveAction   String
+  expertReviewFlag   Boolean @default(false)
+  sourceLinks        Json
+  sourceVersionDate  DateTime?
+  createdAt          DateTime @default(now())
+  rules              ComplianceRule[]
+}
+
+model ComplianceRule {
+  id               String @id @default(uuid())
+  complianceItem   ComplianceItem @relation(fields: [complianceItemId], references: [id])
+  complianceItemId String
+  ruleJson         Json
+  priority         Int
+  effectiveDate    DateTime
+  expiresAt        DateTime?
+  createdAt        DateTime @default(now())
+}
+
+model Assessment {
+  id        String @id @default(uuid())
+  orgId     String
+  entityId  String
+  runBy     String
+  runAt     DateTime @default(now())
+  confidence Float
+  summary   Json
+  items     AssessmentItem[]
+}
+
+model AssessmentItem {
+  id               String @id @default(uuid())
+  assessment       Assessment @relation(fields: [assessmentId], references: [id])
+  assessmentId     String
+  complianceItemId String
+  status           String
+  whyApplicable    String
+  evidence         Json
+  lastUpdated      DateTime @default(now())
+}
+
+model SourceDocument {
+  id            String @id @default(uuid())
+  title         String
+  jurisdiction  String
+  publishedDate DateTime?
+  contentPath   String
+  vectorId      String?
+  createdAt     DateTime @default(now())
+}
+
+model ExpertReviewRequest {
+  id               String @id @default(uuid())
+  assessmentItem   AssessmentItem @relation(fields: [assessmentItemId], references: [id])
+  assessmentItemId String
+  requestedBy      String
+  status           String
+  notes            String?
+  assignedTo       String?
+  createdAt        DateTime @default(now())
+}
+
+model Subscription {
+  id           String @id @default(uuid())
+  org          Organization @relation(fields: [orgId], references: [id])
+  orgId        String
+  planId       String
+  status       String
+  startedAt    DateTime
+  nextBillingAt DateTime?
+}
+
+model AuditLog {
+  id        String @id @default(uuid())
+  actorId   String?
+  orgId     String?
+  action    String
+  meta      Json
+  createdAt DateTime @default(now())
+}
+// prisma/seed.js
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function main() {
+  const org = await prisma.organization.create({
+    data: { name: 'Pilot Startup', tenantSlug: 'pilot-startup' }
+  });
+
+  const user = await prisma.user.create({
+    data: { email: 'founder@example.com', name: 'Founder', password: 'HASHED_PASSWORD' }
+  });
+
+  await prisma.organizationMember.create({
+    data: { orgId: org.id, userId: user.id, role: 'org_owner' }
+  });
+
+  const entity = await prisma.entity.create({
+    data: { orgId: org.id, name: 'Pilot Pvt Ltd', entityType: 'PvtLtd' }
+  });
+
+  await prisma.businessProfile.create({
+    data: {
+      entityId: entity.id,
+      turnover: 12000000,
+      employeeCount: 8,
+      gstRegistered: false,
+      sectors: ['saas'],
+      flags: {}
+    }
+  });
+
+  await prisma.complianceItem.createMany({
+    data: [
+      {
+        code: 'GST-REG',
+        title: 'GST Registration',
+        shortLabel: 'GST Reg',
+        category: 'tax',
+        jurisdictionLevel: 'central',
+        triggerType: 'threshold',
+        triggerLogic: JSON.stringify({ turnover_greater_than: 2000000 }),
+        mandatoryStatus: 'mandatory_after_threshold',
+        riskLevel: 8,
+        legalBasisSummary: 'CGST Act',
+        primaryAuthority: 'CBIC',
+        primaryPortal: 'https://www.gst.gov.in',
+        sourceLinks: JSON.stringify([{ id: 'src-gst', url: 'https://www.gst.gov.in' }])
+      },
+      {
+        code: 'ESI-REG',
+        title: 'ESI Registration',
+        shortLabel: 'ESI',
+        category: 'labour',
+        jurisdictionLevel: 'central',
+        triggerType: 'threshold',
+        triggerLogic: JSON.stringify({ employee_count_greater_than: 10 }),
+        mandatoryStatus: 'mandatory_after_threshold',
+        riskLevel: 6,
+        legalBasisSummary: 'ESI Act',
+        primaryAuthority: 'ESIC',
+        primaryPortal: 'https://www.esic.in',
+        sourceLinks: JSON.stringify([{ id: 'src-esi', url: 'https://www.esic.in' }])
+      }
+    ]
+  });
+
+  console.log('Seed complete');
+}
+
+main()
+  .catch(e => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+import './globals.css';
+import { Inter, Playfair_Display, JetBrains_Mono } from 'next/font/google';
+import AppShell from '../components/AppShell';
+
+const display = Playfair_Display({ subsets: ['latin'], weight: ['400','600','700'], variable: '--font-display' });
+const ui = Inter({ subsets: ['latin'], weight: ['300','400','600'], variable: '--font-ui' });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400','700'], variable: '--font-mono' });
+
+export const metadata = {
+  title: 'ComplianceOS India',
+  description: 'Regulatory clarity for Indian business'
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className={`${display.variable} ${ui.variable} ${mono.variable}`}>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
+    </html>
+  );
+}
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-bg900 text-ivory">
+      <main className="max-w-6xl mx-auto py-20 px-8">
+        <section className="grid grid-cols-12 gap-8 items-center">
+          <div className="col-span-7">
+            <h1 className="font-display text-5xl leading-tight">Regulatory clarity for Indian business.</h1>
+            <p className="mt-6 text-platinum text-lg max-w-2xl">Know what applies. Act before it hurts. Citation‑backed compliance intelligence for founders, advisors, and enterprise teams.</p>
+            <div className="mt-8 flex gap-4">
+              <a className="inline-block bg-gold text-bg900 px-6 py-3 rounded-md font-medium">Start assessment</a>
+              <a className="inline-block border border-[rgba(255,255,255,0.06)] text-platinum px-6 py-3 rounded-md">Request demo</a>
+            </div>
+          </div>
+          <div className="col-span-5">
+            <div className="bg-panel p-6 rounded-lg shadow-md">
+              <div className="text-platinum">Dashboard preview (demo)</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+import React from 'react';
+import Icon from './icons';
+
+export default function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-bg900 text-ivory">
+      <aside className="w-72 bg-panel border-r border-[rgba(255,255,255,0.06)] fixed inset-y-0 left-0 p-6">
+        <div className="mb-8">
+          <div className="text-gold font-display text-xl">ComplianceOS</div>
+          <div className="text-platinum text-sm mt-1">Regulatory clarity for Indian business</div>
+        </div>
+        <nav className="space-y-2">
+          <a className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-bg800">
+            <Icon name="dashboard" />
+            <span className="text-sm">Dashboard</span>
+          </a>
+          <a className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-bg800">
+            <Icon name="library" />
+            <span className="text-sm">Compliance Library</span>
+          </a>
+          <a className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-bg800">
+            <Icon name="questionnaire" />
+            <span className="text-sm">Questionnaire</span>
+          </a>
+        </nav>
+      </aside>
+
+      <div className="ml-72">
+        <header className="h-16 flex items-center justify-between px-8 border-b border-[rgba(255,255,255,0.06)]">
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-platinum">Pilot Startup</div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-platinum">Notifications</div>
+            <div className="text-sm text-platinum">Founder</div>
+          </div>
+        </header>
+
+        <main className="p-8">{children}</main>
+      </div>
+    </div>
+  );
+}
+export default function Card({ children, title }: { children: React.ReactNode; title?: string }) {
+  return (
+    <div className="bg-panel rounded-md p-6 shadow-md border border-[rgba(255,255,255,0.03)]">
+      {title && <div className="text-platinum text-sm mb-3">{title}</div>}
+      <div>{children}</div>
+    </div>
+  );
+}
+export default function Badge({ children, tone = 'platinum' }: { children: React.ReactNode; tone?: 'gold' | 'platinum' | 'danger' }) {
+  const toneClass = tone === 'gold' ? 'bg-gold text-bg900' : tone === 'danger' ? 'bg-danger text-bg900' : 'bg-[transparent] text-platinum border border-[rgba(255,255,255,0.04)]';
+  return <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${toneClass}`}>{children}</span>;
+}
+const Icon = ({ name }: { name: string }) => {
+  const common = { width: 20, height: 20, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5 };
+  switch (name) {
+    case 'dashboard':
+      return (
+        <svg {...common} viewBox="0 0 24 24" className="text-platinum">
+          <rect x="3" y="3" width="8" height="8" rx="1" stroke="currentColor" />
+          <rect x="13" y="3" width="8" height="5" rx="1" stroke="currentColor" />
+          <rect x="13" y="10" width="8" height="11" rx="1" stroke="currentColor" />
+          <rect x="3" y="13" width="8" height="8" rx="1" stroke="currentColor" />
+        </svg>
+      );
+    case 'library':
+      return (
+        <svg {...common} viewBox="0 0 24 24" className="text-platinum">
+          <path d="M4 19h16" stroke="currentColor" />
+          <rect x="6" y="4" width="4" height="12" rx="1" stroke="currentColor" />
+          <rect x="14" y="4" width="4" height="8" rx="1" stroke="currentColor" />
+        </svg>
+      );
+    case 'questionnaire':
+      return (
+        <svg {...common} viewBox="0 0 24 24" className="text-platinum">
+          <path d="M8 6h8" stroke="currentColor" />
+          <path d="M8 12h8" stroke="currentColor" />
+          <path d="M8 18h8" stroke="currentColor" />
+        </svg>
+      );
+    default:
+      return <svg {...common} viewBox="0 0 24 24" className="text-platinum"><circle cx="12" cy="12" r="10" stroke="currentColor" /></svg>;
+  }
+};
+
+export default Icon;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --bg-900:#0b0d0f;
+  --bg-800:#111316;
+  --panel:#0f1316;
+  --muted-700:#2b2f33;
+  --text-100:#f7f6f4;
+  --text-70:#cfd3d6;
+  --accent-gold:#bfa36a;
+  --border-hair: rgba(255,255,255,0.06);
+}
+
+html,body,#__next { height: 100%; }
+body { background: var(--bg-900); color: var(--text-100); font-family: var(--font-ui); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+.font-display { font-family: var(--font-display); }
+.font-mono { font-family: var(--font-mono); }
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: npm run build
+      - name: Run Prisma Migrate (if DATABASE_URL set)
+        if: env.DATABASE_URL != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx prisma migrate deploy
+FROM node:18-alpine
+WORKDIR /app
+COPY package.json pnpm-lock.yaml* ./
+RUN npm i -g pnpm && pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+ENV NODE_ENV=production
+CMD ["node", ".next/standalone/server.js"]
